@@ -59,6 +59,17 @@ def rng_offset_for_name(name: str) -> int:
     return uint32(deterministic_hash_code(snake_case(name)))
 
 
+def event_offset_for_id(event_id: str, net_id: int = 1) -> int:
+    """Return the 32-bit single-event RNG offset.
+
+    EventModel.BeginEvent seeds event RNGs with
+    `runSeed + (IsShared ? 0 : Owner.NetId) + hash(event.Id.Entry)`.
+    Most single-player examples use `net_id=1`.
+    """
+
+    return uint32(net_id + deterministic_hash_code(event_id))
+
+
 def normalize_offset(offset: int | str) -> int:
     if isinstance(offset, str):
         return rng_offset_for_name(offset)

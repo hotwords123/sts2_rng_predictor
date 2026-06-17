@@ -4,7 +4,19 @@ version = "0.1.0"
 description = "Predict correlated Slay the Spire 2 RNG outputs from observed RNG call ranges."
 readme = "README.md"
 requires-python = ">=3.14"
-dependencies = []
+dependencies = [
+    "dotenv>=0.9.9",
+]
+
+[project.scripts]
+sts2-rng-predictor = "sts2_rng_predictor.cli:main"
+
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["sts2_rng_predictor"]
 
 [tool.uv]
-package = false
+package = true

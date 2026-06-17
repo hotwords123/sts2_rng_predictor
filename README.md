@@ -7,9 +7,18 @@ Small Python project for predicting correlated Slay the Spire 2 RNG outputs from
 From this directory:
 
 ```bash
-uv run python -m sts2_rng_predictor --self-test
+uv run sts2-rng-predictor --self-test
 uv run python -m sts2_rng_predictor --example
 uv run python -m sts2_rng_predictor --same-counter-example
+uv run python scripts/reproduce_leafy_hefty.py
+uv run python scripts/reproduce_trash_heap.py --sample-check 1000000
+```
+
+The source-inspection scripts read local paths from `.env`:
+
+```dotenv
+STS2_CODE_ROOT=../sts2
+STS2_LOCALIZATION_ROOT=../localization
 ```
 
 As a library:
