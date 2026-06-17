@@ -58,6 +58,9 @@ are `int.MaxValue`, `int.MinValue`, and `-int.MaxValue`; .NET maps all three to
 $S=M$. In the modular formulas below, these boundary cases should be handled as
 point exceptions.
 
+The folded seed $S=0$ is not a boundary exception. It has only one unsigned
+derived-seed preimage, $z=0$, and is included only in the positive branch.
+
 ## Raw Sample Formula
 
 For a fixed call counter $c$, the compatible `System.Random` raw output
@@ -330,7 +333,7 @@ These guard conditions can be represented in the raw sample coordinate as
 modular interval constraints:
 
 $$
-p_i x + q_i \pmod M \in [L_i, R_i)
+(p_i x + q_i)\bmod M \in [L_i, R_i)
 $$
 
 Potentially an interval may wrap around modulo $M$, in which case it should be
@@ -342,7 +345,7 @@ A `NextInt` observation, a branch guard, and a target `NextInt` bucket can all b
 expressed in the same form:
 
 $$
-p_i x + q_i \pmod M \in I_i
+(p_i x + q_i)\bmod M \in I_i
 $$
 
 where $I_i$ is a set of one or more disjoint intervals in $[0,M)$.
@@ -352,19 +355,19 @@ Examples:
 Observed result bucket:
 
 $$
-1 \cdot x + 0 \pmod M \in I_{\text{obs}}
+(1 \cdot x + 0)\bmod M \in I_{\text{obs}}
 $$
 
 Target result bucket for line $y = ax+b$:
 
 $$
-a x + b \pmod M \in I_{\text{target}}
+(a x + b)\bmod M \in I_{\text{target}}
 $$
 
 Branch guard:
 
 $$
-p_{\text{guard}} x + q_{\text{guard}} \pmod M \in I_{\text{branch}}
+(p_{\text{guard}} x + q_{\text{guard}})\bmod M \in I_{\text{branch}}
 $$
 
 So a guarded line can be modeled as:
@@ -374,18 +377,18 @@ $$
 \left(
 y = a_i x + b_i \pmod M,\;
 \bigwedge_j
-p_{ij}x + q_{ij} \pmod M \in I_{ij}
+(p_{ij}x + q_{ij})\bmod M \in I_{ij}
 \right)
 $$
 
 Prediction becomes a counting problem:
 
 $$
-\#\left\{
+\left|\left\{
 x \in [0,M):
 \forall j,\;
-p_jx+q_j \pmod M \in I_j
-\right\}
+(p_jx+q_j)\bmod M \in I_j
+\right\}\right|
 $$
 
 For a target `NextInt(k)` distribution, compute this count once per target
@@ -512,7 +515,7 @@ For a fixed branch assignment:
 6. Count:
 
    $$
-   \#\{x\in U:\alpha^{-1}(x-\beta)\pmod M\in J\}
+   \left|\{x\in U:\alpha^{-1}(x-\beta)\bmod M\in J\}\right|
    $$
 
    with a floor-sum prefix count in $O(\log M)$, not by enumerating $x$.

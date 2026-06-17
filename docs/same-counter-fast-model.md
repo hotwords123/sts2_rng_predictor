@@ -62,6 +62,9 @@ $$
 
 这些点不放进区间模型里，而是作为有限个 base seed 点直接检查。
 
+$S_i=0$ 不是边界特例。它只有一个 unsigned derived-seed 原像 $z_i=0$，
+并且只属于正分支。
+
 ## Exact `NextInt` Buckets
 
 数学上，`NextInt(n)` 近似是：
@@ -273,14 +276,14 @@ $$
 对某个 target bucket，最终需要计数：
 
 $$
-\#\{x\in U_r:\;px+q\pmod M\in J\}
+\left|\{x\in U_r:\;(px+q)\bmod M\in J\}\right|
 $$
 
 这一步不枚举 $x$。对一个 sample 区间 $[L,R)$ 和一个 guard 区间
 $[A,B)$，使用前缀计数：
 
 $$
-F(N,T)=\#\{0\le x<N:\;px+q\pmod M<T\}
+F(N,T)=\left|\{0\le x<N:\;(px+q)\bmod M<T\}\right|
 $$
 
 则：
@@ -294,7 +297,7 @@ $F$ 用标准 Euclidean `floor_sum(n,m,a,b)` 在 $O(\log M)$ 内计算。使用
 恒等式：
 
 $$
-\#\{x<N:\;px+q\pmod M\ge T\}
+\left|\{x<N:\;(px+q)\bmod M\ge T\}\right|
 =
 \sum_{x=0}^{N-1}
 \left(
@@ -307,7 +310,7 @@ $$
 于是：
 
 $$
-F(N,T)=N-\#\{x<N:\;px+q\pmod M\ge T\}
+F(N,T)=N-\left|\{x<N:\;(px+q)\bmod M\ge T\}\right|
 $$
 
 对 interval union 逐段相加即可。
