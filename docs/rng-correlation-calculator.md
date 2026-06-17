@@ -2,6 +2,8 @@
 
 这份工具用于分析 STS2 中“同一基础 seed + 不同固定偏移”的 RNG 相关性。实现位于 `sts2_rng_predictor/` 包中，既可以作为 Python 库导入，也可以直接运行内置示例和自测。
 
+更完整的数学建模见 [rng-math-model.md](rng-math-model.md)。
+
 ## 模型
 
 STS2 的 `Rng` 封装使用：
@@ -25,6 +27,7 @@ new Rng(baseSeed + (uint)GetDeterministicHashCode(name))
 ```bash
 uv run python -m sts2_rng_predictor --self-test
 uv run python -m sts2_rng_predictor --example
+uv run python -m sts2_rng_predictor --same-counter-example
 ```
 
 作为库导入：
@@ -32,9 +35,14 @@ uv run python -m sts2_rng_predictor --example
 ```python
 from sts2_rng_predictor import (
     CallSpec,
+    IntCall,
+    IntObservation,
+    IntTarget,
     Observation,
     Target,
     predict_distribution,
+    predict_same_counter_fast,
+    predict_same_counter_distribution,
 )
 
 full_int = CallSpec(kind="next_int", min_inclusive=0, max_exclusive=2_147_483_647)
@@ -67,6 +75,25 @@ print(result.candidate_count)
 print(result.distribution)
 ```
 
+如果所有观测和目标调用使用相同 counter，优先使用 same-counter 预测器：
+
+```python
+same_counter_observations = [
+    IntObservation("monster_ai", 0, IntCall(0, 1_000_000), 123456, 123456),
+    IntObservation("shuffle", 0, IntCall(0, 1_000_000), 654321, 654321),
+]
+
+result = predict_same_counter_fast(
+    same_counter_observations,
+    IntTarget("niche", 0, IntCall(0, 10)),
+)
+```
+
+它会选择 raw sample 空间最小的观测作为锚点，但不枚举 raw sample，也不保存完整 base seed 集合；同 counter 下每个 branch 都退化为 sample 空间的平移或反射，剩余计数用 floor-sum 精确完成。
+目标 `NextInt` range 默认最多输出 100,000 个桶；如果确实需要更大的完整分布，可以传 `max_target_buckets=` 提高上限。
+
+`predict_same_counter_distribution()` 是旧的流式枚举对照实现，主要用于测试和调试。
+
 整数观测的 `observed_min` / `observed_max` 是包含端点的结果区间。例如看到一次 `NextInt(4)` 结果为 2，就写 `observed_min=2, observed_max=2`。
 
 ## 偏移量
@@ -94,6 +121,8 @@ Observation(offset="monster_ai", counter=0, call=full_int, observed_min=10, obse
 
 - 至少需要一个 `next_int` 观测。工具用它反推候选 base seed，不做 2^32 全量扫描。
 - 观测太宽时会抛出 `PredictionTooBroadError`。这通常表示需要增加观测、使用更窄区间，或显式提高 `max_candidates`。
+- `predict_same_counter_fast()` 要求所有观测和目标的 `counter` 相同；它只支持 `NextInt`，返回 `SameCounterResult`。
+- `predict_same_counter_distribution()` 是 same-counter 的旧流式枚举器；它使用 `max_anchor_samples` 控制锚观测 raw sample 枚举规模。
 - v1 不自动推断未知 counter，也不建模完整 `Shuffle`、`NextGaussian*` 或其它会消耗多次底层随机数的组合行为。
 - `next_float` 可以作为观测区间过滤；如果目标是 `next_float`，需要在 `CallSpec` 上设置 `buckets`，工具会输出分桶分布。
 
@@ -106,3 +135,10 @@ Observation(offset="monster_ai", counter=0, call=full_int, observed_min=10, obse
 - `initial_candidate_count`：只按主观测生成的初始候选数量。
 - `filtering_stats`：每条观测过滤掉的候选数量。
 - `diagnostics`：主观测、目标 offset、target counter 等调试信息。
+
+`predict_same_counter_fast()` 返回 `SameCounterResult`：
+
+- `distribution`：目标整数输出到概率的后验分布。
+- `counts`：目标整数输出到精确计数。
+- `total_count`：满足所有观测的等价 base seed / branch 点计数。
+- `diagnostics`：anchor、branch 数、边界点补计数等调试信息。

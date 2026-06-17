@@ -22,19 +22,35 @@ Run `uv run python -m sts2_rng_predictor --example` for a worked example.
 from __future__ import annotations
 
 import math
-import re
-import struct
 from collections import Counter
 from dataclasses import dataclass
-from functools import lru_cache
 from typing import Iterable, Literal
 
-
-INT_MAX = 2_147_483_647
-INT_MIN = -2_147_483_648
-UINT_MASK = 0xFFFFFFFF
-MBIG = INT_MAX
-MSEED = 161_803_398
+from .rng_compat import (
+    INT_MAX,
+    INT_MIN,
+    MBIG,
+    DotNetCompatRandom,
+    derived_seed,
+    derived_seeds_for_abs_seed,
+    deterministic_hash_code,
+    internal_sample_from_abs_seed,
+    internal_sample_from_derived_u32,
+    next_float_from_sample,
+    next_int_from_sample,
+    normalize_offset,
+    rng_offset_for_name,
+    sample_affine,
+    snake_case,
+    to_single,
+    uint32,
+)
+from .same_counter import (
+    IntCall,
+    IntObservation,
+    IntTarget,
+    predict_same_counter_fast,
+)
 
 CallKind = Literal["next_int", "next_float"]
 
@@ -120,192 +136,14 @@ class PredictionResult:
     diagnostics: dict[str, int | str]
 
 
-def _int32(value: int) -> int:
-    value &= UINT_MASK
-    if value >= 0x80000000:
-        value -= 0x100000000
-    return value
-
-
-def _uint32(value: int) -> int:
-    return value & UINT_MASK
-
-
-def _u32_to_i32(value: int) -> int:
-    return _int32(value)
-
-
-def _to_single(value: float) -> float:
-    return struct.unpack("<f", struct.pack("<f", value))[0]
-
-
-def snake_case(txt: str) -> str:
-    """Approximate STS2 StringHelper.SnakeCase for RNG enum/name inputs."""
-
-    stripped = txt.strip()
-    return re.sub(r"([A-Za-z0-9])([A-Z])", r"\1_\2", stripped).lower()
-
-
-def deterministic_hash_code(text: str) -> int:
-    """Mirror STS2 StringHelper.GetDeterministicHashCode."""
-
-    num = 352_654_597
-    num2 = num
-    for i in range(0, len(text), 2):
-        num = _int32(_int32((num << 5) + num) ^ ord(text[i]))
-        if i == len(text) - 1:
-            break
-        num2 = _int32(_int32((num2 << 5) + num2) ^ ord(text[i + 1]))
-    return _int32(num + _int32(num2 * 1_566_083_941))
-
-
-def rng_offset_for_name(name: str) -> int:
-    """Return the 32-bit STS2 RNG-name offset.
-
-    Names may be passed as enum-style `CombatEnergyCosts` or snake-case
-    `combat_energy_costs`.
-    """
-
-    return _uint32(deterministic_hash_code(snake_case(name)))
-
-
-def normalize_offset(offset: int | str) -> int:
-    if isinstance(offset, str):
-        return rng_offset_for_name(offset)
-    return _uint32(offset)
-
-
-def derived_seed(base_seed: int, offset: int | str) -> int:
-    """Return `(base_seed + offset) mod 2^32`."""
-
-    return _uint32(base_seed + normalize_offset(offset))
-
-
-def _abs_seed_from_i32(seed: int) -> int:
-    if seed == INT_MIN:
-        return INT_MAX
-    return abs(seed)
-
-
-def _abs_seed_from_u32(seed: int) -> int:
-    return _abs_seed_from_i32(_u32_to_i32(seed))
-
-
-def _derived_seeds_for_abs_seed(abs_seed: int) -> tuple[int, ...]:
-    if not 0 <= abs_seed <= MBIG:
-        raise ValueError("abs_seed out of range")
-    if abs_seed == 0:
-        return (0,)
-    if abs_seed == MBIG:
-        return (0x7FFFFFFF, 0x80000000)
-    return (abs_seed, _uint32(-abs_seed))
-
-
-class DotNetCompatRandom:
-    """Compatibility PRNG used by `new System.Random(int seed)`."""
-
-    def __init__(self, seed: int) -> None:
-        self._seed_array = [0] * 56
-        subtraction = _abs_seed_from_i32(_int32(seed))
-        self._init_from_subtraction(subtraction)
-
-    @classmethod
-    def from_abs_seed(cls, abs_seed: int) -> DotNetCompatRandom:
-        obj = cls.__new__(cls)
-        obj._seed_array = [0] * 56
-        obj._init_from_subtraction(abs_seed)
-        return obj
-
-    def _init_from_subtraction(self, subtraction: int) -> None:
-        mj = _int32(MSEED - subtraction)
-        self._seed_array[55] = mj
-        mk = 1
-        for i in range(1, 55):
-            ii = (21 * i) % 55
-            self._seed_array[ii] = mk
-            mk = _int32(mj - mk)
-            if mk < 0:
-                mk = _int32(mk + MBIG)
-            mj = self._seed_array[ii]
-        for _ in range(1, 5):
-            for i in range(1, 56):
-                self._seed_array[i] = _int32(
-                    self._seed_array[i] - self._seed_array[1 + (i + 30) % 55]
-                )
-                if self._seed_array[i] < 0:
-                    self._seed_array[i] = _int32(self._seed_array[i] + MBIG)
-        self._inext = 0
-        self._inextp = 21
-
-    def internal_sample(self) -> int:
-        loc_inext = self._inext + 1
-        if loc_inext >= 56:
-            loc_inext = 1
-
-        loc_inextp = self._inextp + 1
-        if loc_inextp >= 56:
-            loc_inextp = 1
-
-        ret_val = _int32(self._seed_array[loc_inext] - self._seed_array[loc_inextp])
-        if ret_val == MBIG:
-            ret_val -= 1
-        if ret_val < 0:
-            ret_val = _int32(ret_val + MBIG)
-
-        self._seed_array[loc_inext] = ret_val
-        self._inext = loc_inext
-        self._inextp = loc_inextp
-        return ret_val
-
-    def next_int(self, max_exclusive: int = INT_MAX) -> int:
-        return _next_int_from_sample(self.internal_sample(), 0, max_exclusive)
-
-    def next_int_range(self, min_inclusive: int, max_exclusive: int) -> int:
-        return _next_int_from_sample(self.internal_sample(), min_inclusive, max_exclusive)
-
-    def next_float(self, min_value: float = 0.0, max_value: float = 1.0) -> float:
-        return _next_float_from_sample(self.internal_sample(), min_value, max_value)
-
-
-@lru_cache(maxsize=None)
-def _internal_sample_from_abs_seed(abs_seed: int, counter: int) -> int:
-    rng = DotNetCompatRandom.from_abs_seed(abs_seed)
-    for _ in range(counter):
-        rng.internal_sample()
-    return rng.internal_sample()
-
-
-@lru_cache(maxsize=None)
-def _sample_affine(counter: int) -> tuple[int, int]:
-    beta = _internal_sample_from_abs_seed(0, counter)
-    one = _internal_sample_from_abs_seed(1, counter)
-    alpha = (one - beta) % MBIG
-    if alpha == 0:
-        raise RuntimeError(f"Unexpected non-invertible sample coefficient at counter {counter}")
-    return alpha, beta
-
-
-def _internal_sample_from_derived_u32(seed: int, counter: int) -> int:
-    abs_seed = _abs_seed_from_u32(seed)
-    if abs_seed == MBIG:
-        return _internal_sample_from_abs_seed(MBIG, counter)
-    alpha, beta = _sample_affine(counter)
-    return (alpha * abs_seed + beta) % MBIG
-
-
-def _next_int_from_sample(sample: int, min_inclusive: int, max_exclusive: int) -> int:
-    range_size = max_exclusive - min_inclusive
-    if range_size <= 0:
-        raise ValueError("next_int range must be positive")
-    if range_size > INT_MAX:
-        raise NotImplementedError("next_int ranges larger than int.MaxValue are not supported")
-    # Match System.Random.Sample() double arithmetic closely.
-    return int((sample * (1.0 / MBIG)) * range_size) + min_inclusive
-
-
-def _next_float_from_sample(sample: int, min_value: float, max_value: float) -> float:
-    value = (sample * (1.0 / MBIG)) * (max_value - min_value) + min_value
-    return _to_single(value)
+_uint32 = uint32
+_derived_seeds_for_abs_seed = derived_seeds_for_abs_seed
+_internal_sample_from_abs_seed = internal_sample_from_abs_seed
+_sample_affine = sample_affine
+_internal_sample_from_derived_u32 = internal_sample_from_derived_u32
+_next_int_from_sample = next_int_from_sample
+_next_float_from_sample = next_float_from_sample
+_to_single = to_single
 
 
 def _call_result_from_sample(sample: int, call: CallSpec) -> int | float:
@@ -487,6 +325,103 @@ def predict_distribution(
     )
 
 
+def _iter_base_seeds_from_primary_observation(
+    observation: Observation,
+    intervals: list[tuple[int, int]],
+) -> Iterable[int]:
+    offset = normalize_offset(observation.offset)
+    alpha, beta = _sample_affine(observation.counter)
+    inverse_alpha = pow(alpha, -1, MBIG)
+
+    for sample_lo, sample_hi in intervals:
+        for sample in range(sample_lo, sample_hi + 1):
+            abs_seed = ((sample - beta) * inverse_alpha) % MBIG
+            for seed in _derived_seeds_for_abs_seed(abs_seed):
+                yield _uint32(seed - offset)
+
+    # The int.MaxValue / int.MinValue folded-seed boundary is not represented
+    # by the affine modulo-M inverse above, so include it as point cases.
+    for seed in _derived_seeds_for_abs_seed(MBIG):
+        base_seed = _uint32(seed - offset)
+        if _observation_matches(base_seed, observation):
+            yield base_seed
+
+
+def predict_same_counter_distribution(
+    observations: Iterable[Observation],
+    target: Target,
+    *,
+    max_anchor_samples: int = 5_000_000,
+) -> PredictionResult:
+    """Predict a target distribution when all calls use the same counter.
+
+    This is a streaming exact enumerator over the raw-sample space of the
+    narrowest `next_int` observation. It avoids storing the full candidate
+    base-seed set, but still refuses observations whose best anchor sample
+    interval exceeds `max_anchor_samples`.
+    """
+
+    observation_list = list(observations)
+    if not observation_list:
+        raise ValueError("At least one observation is required")
+    if max_anchor_samples <= 0:
+        raise ValueError("max_anchor_samples must be positive")
+
+    counters = {observation.counter for observation in observation_list}
+    counters.add(target.counter)
+    if len(counters) != 1:
+        raise ValueError("predict_same_counter_distribution requires all observations and target to share one counter")
+
+    primary_index, primary_intervals = _choose_primary_observation(observation_list)
+    primary = observation_list[primary_index]
+    anchor_sample_count = _candidate_count_for_intervals(primary_intervals)
+    if anchor_sample_count > max_anchor_samples:
+        raise PredictionTooBroadError(
+            "Best same-counter anchor observation leaves too many raw samples "
+            f"({anchor_sample_count:,} > {max_anchor_samples:,}). "
+            "Add narrower observations or raise max_anchor_samples."
+        )
+
+    filtering_stats: dict[str, int] = {f"anchor[{primary_index}]": anchor_sample_count}
+    generated_count = 0
+    matched_count = 0
+    counts: Counter[int | str] = Counter()
+
+    for base_seed in _iter_base_seeds_from_primary_observation(primary, primary_intervals):
+        generated_count += 1
+        for i, observation in enumerate(observation_list):
+            if not _observation_matches(base_seed, observation):
+                filtering_stats[f"observation[{i}]"] = filtering_stats.get(f"observation[{i}]", 0) + 1
+                break
+        else:
+            matched_count += 1
+            result = _call_result(base_seed, target.offset, target.counter, target.call)
+            counts[_target_bucket(result, target.call)] += 1
+
+    distribution = {
+        result: count / matched_count
+        for result, count in sorted(counts.items(), key=lambda item: str(item[0]))
+    } if matched_count else {}
+
+    diagnostics: dict[str, int | str] = {
+        "mode": "same_counter_raw_sample_anchor",
+        "counter": next(iter(counters)),
+        "anchor_observation": primary_index,
+        "anchor_sample_count": anchor_sample_count,
+        "generated_base_seed_count": generated_count,
+        "target_offset": normalize_offset(target.offset),
+        "target_kind": target.call.kind,
+    }
+
+    return PredictionResult(
+        distribution=distribution,
+        candidate_count=matched_count,
+        initial_candidate_count=generated_count,
+        filtering_stats=filtering_stats,
+        diagnostics=diagnostics,
+    )
+
+
 def _format_distribution(distribution: dict[int | str, float]) -> str:
     lines = []
     for result, probability in distribution.items():
@@ -523,6 +458,33 @@ def run_example() -> None:
     print(_format_distribution(result.distribution))
 
 
+def run_same_counter_example() -> None:
+    base = 0xCC623A9B
+    counter = 0
+    obs_call = CallSpec("next_int", 0, 1_000_000)
+    target_call = CallSpec("next_int", 0, 10)
+
+    obs_a_value = int(_call_result(base, 0, counter, obs_call))
+    obs_b_value = int(_call_result(base, "monster_ai", counter, obs_call))
+    target_value = int(_call_result(base, "niche", counter, target_call))
+
+    result = predict_same_counter_fast(
+        [
+            IntObservation(0, counter, IntCall(0, 1_000_000), obs_a_value, obs_a_value),
+            IntObservation("monster_ai", counter, IntCall(0, 1_000_000), obs_b_value, obs_b_value),
+        ],
+        IntTarget("niche", counter, IntCall(0, 10)),
+    )
+
+    print("Synthetic hidden base seed: 0xCC623A9B")
+    print(f"Observed offset 0 counter {counter} NextInt(1000000): {obs_a_value}")
+    print(f"Observed monster_ai counter {counter} NextInt(1000000): {obs_b_value}")
+    print(f"Actual niche counter {counter} NextInt(10): {target_value}")
+    print(f"Posterior candidates: {result.total_count}")
+    print("Predicted distribution:")
+    print(_format_distribution(result.distribution))
+
+
 def run_self_test() -> None:
     assert snake_case("CombatEnergyCosts") == "combat_energy_costs"
     assert snake_case("monster_ai") == "monster_ai"
@@ -535,6 +497,7 @@ def run_self_test() -> None:
         0: [1_559_595_546, 1_755_192_844, 1_649_316_166, 1_198_642_031, 442_452_829],
         1: [534_011_718, 237_820_880, 1_002_897_798, 1_657_007_234, 1_412_011_072],
         -1: [534_011_718, 237_820_880, 1_002_897_798, 1_657_007_234, 1_412_011_072],
+        -INT_MAX: [1_559_595_546, 1_755_192_844, 1_649_316_172, 1_198_642_031, 442_452_829],
         INT_MIN: [1_559_595_546, 1_755_192_844, 1_649_316_172, 1_198_642_031, 442_452_829],
         INT_MAX: [1_559_595_546, 1_755_192_844, 1_649_316_172, 1_198_642_031, 442_452_829],
     }
@@ -585,5 +548,55 @@ def run_self_test() -> None:
     brute_total = sum(brute_counts.values())
     brute_distribution = {k: v / brute_total for k, v in sorted(brute_counts.items())}
     assert predicted.distribution == brute_distribution
+
+    same_counter_prediction = predict_same_counter_distribution(
+        [
+            Observation("monster_ai", 0, obs_call, obs_a, obs_a),
+            Observation("combat_energy_costs", 0, obs_call, int(_call_result(base, "combat_energy_costs", 0, obs_call)), int(_call_result(base, "combat_energy_costs", 0, obs_call))),
+        ],
+        Target("shuffle", 0, target_call),
+        max_anchor_samples=100,
+    )
+    assert same_counter_prediction.candidate_count >= 1
+    assert int(_call_result(base, "shuffle", 0, target_call)) in same_counter_prediction.distribution
+
+    fast_same_counter = predict_same_counter_fast(
+        [
+            IntObservation("monster_ai", 0, IntCall(0, INT_MAX), obs_a, obs_a),
+            IntObservation(
+                "combat_energy_costs",
+                0,
+                IntCall(0, INT_MAX),
+                int(_call_result(base, "combat_energy_costs", 0, obs_call)),
+                int(_call_result(base, "combat_energy_costs", 0, obs_call)),
+            ),
+        ],
+        IntTarget("shuffle", 0, IntCall(0, 7)),
+    )
+    assert fast_same_counter.total_count == same_counter_prediction.candidate_count
+    assert fast_same_counter.distribution == same_counter_prediction.distribution
+
+    for test_counter in (0, 1, 3):
+        for test_base in (0, 1, 0x1234ABCD, 0xCC623A9B, 0x80000000):
+            narrow_call = CallSpec("next_int", 0, 1_000_000)
+            narrow_int_call = IntCall(0, 1_000_000)
+            stream_observations = []
+            fast_observations = []
+            for offset in (0, "monster_ai"):
+                value = int(_call_result(test_base, offset, test_counter, narrow_call))
+                stream_observations.append(Observation(offset, test_counter, narrow_call, value, value))
+                fast_observations.append(IntObservation(offset, test_counter, narrow_int_call, value, value))
+
+            stream_result = predict_same_counter_distribution(
+                stream_observations,
+                Target("niche", test_counter, CallSpec("next_int", 0, 10)),
+                max_anchor_samples=5_000,
+            )
+            fast_result = predict_same_counter_fast(
+                fast_observations,
+                IntTarget("niche", test_counter, IntCall(0, 10)),
+            )
+            assert fast_result.total_count == stream_result.candidate_count
+            assert fast_result.distribution == stream_result.distribution
 
     print("self-test ok")
