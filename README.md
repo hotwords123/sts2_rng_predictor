@@ -8,11 +8,14 @@ From this directory:
 
 ```bash
 uv run sts2-rng-predictor --self-test
-uv run python -m sts2_rng_predictor --example
-uv run python -m sts2_rng_predictor --same-counter-example
-uv run python scripts/reproduce_leafy_hefty.py
-uv run python scripts/reproduce_trash_heap.py --sample-check 1000000
+uv run -m sts2_rng_predictor --example
+uv run -m sts2_rng_predictor --same-counter-example
+uv run scripts/reproduce_leafy_hefty.py
+uv run scripts/reproduce_neows_bones_curse.py
+uv run scripts/reproduce_trash_heap.py --sample-check 1000000
 ```
+
+Saved outputs from the reproduction scripts are indexed in [results/README.md](results/README.md).
 
 The source-inspection scripts read local paths from `.env`:
 
