@@ -27,7 +27,9 @@ $$
 where:
 
 - $B$ is the hidden run or player base seed.
-- $o$ is the fixed RNG offset, usually `GetDeterministicHashCode(snake_case(name))`.
+- $o$ is the fixed RNG offset. Named run/player RNGs usually use
+  `GetDeterministicHashCode(snake_case(name))`; event RNGs use
+  `Owner.NetId + GetDeterministicHashCode(event.Id.Entry)`.
 - $z$ is the 32-bit seed passed to `new System.Random((int)z)`.
 
 The .NET compatible `System.Random(int seed)` first folds the signed seed:
@@ -41,8 +43,8 @@ where, ignoring the boundary points for a moment:
 $$
 \operatorname{abs32}(z) =
 \begin{cases}
-z, & 0 \le z \le 2^{31}-1 \\
-Q-z, & 2^{31} \le z \le Q-1
+z, & 0 \le z < M \\
+Q-z, & M+3 \le z < Q
 \end{cases}
 $$
 
@@ -305,16 +307,24 @@ $$
 z_B \in H_B
 $$
 
-where $H_+$ is the signed non-negative half and $H_-$ is the signed negative
-half:
+where $H_+$ is the continuous non-boundary non-negative branch and $H_-$
+is the continuous non-boundary negative branch:
 
 $$
-H_+ = [0, 2^{31})
+H_+ = [0, M)
 $$
 
 $$
-H_- = [2^{31}, 2^{32})
+H_- = [M+3, Q)
 $$
+
+The omitted boundary points are:
+
+$$
+z\in\{M,M+1,M+2\}
+$$
+
+The implementation checks them separately.
 
 These guard conditions can be represented in the raw sample coordinate as
 modular interval constraints:
@@ -477,20 +487,20 @@ $$
 (\text{sign}, w),\qquad w\in\{0,1\}
 $$
 
-where \(w\) records whether:
+where $w$ records whether:
 
 $$
 z_i=z_A+\Delta_Q-wQ
 $$
 
-subtracted one copy of \(Q\). This wrap bit matters because \(Q\equiv2\pmod M\),
+subtracted one copy of $Q$. This wrap bit matters because $Q\equiv2\pmod M$,
 so it changes the sample line's constant term by two units in folded-seed space.
 
 For a fixed branch assignment:
 
 1. Convert every integer observation to exact raw sample intervals.
 2. Pull every non-anchor observation interval back through a translation or
-   reflection \(y=\pm x+b\pmod M\).
+   reflection $y=\pm x+b\pmod M$.
 3. Intersect those ordinary sample intervals in anchor sample space.
 4. Convert sign and wrap guards into ordinary intervals for:
 
@@ -505,9 +515,9 @@ For a fixed branch assignment:
    \#\{x\in U:\alpha^{-1}(x-\beta)\pmod M\in J\}
    $$
 
-   with a floor-sum prefix count in \(O(\log M)\), not by enumerating \(x\).
+   with a floor-sum prefix count in $O(\log M)$, not by enumerating $x$.
 7. Add explicit point checks for the boundary derived seeds
-   \(z\in\{M,M+1,M+2\}\).
+   $z\in\{M,M+1,M+2\}$.
 
 This is exact for supported `NextInt` same-counter calls and its cost depends on
 the number of branch assignments and target buckets, not on the width of the

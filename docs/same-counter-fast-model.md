@@ -31,7 +31,7 @@ $$
 
 ## Seed Fold
 
-对 hidden base seed \(B\) 和 stream offset \(o_i\)，STS2 传给
+对 hidden base seed $B$ 和 stream offset $o_i$，STS2 传给
 `System.Random((int)seed)` 的 32-bit seed 是：
 
 $$
@@ -70,7 +70,7 @@ $$
 \left\lfloor \frac{x n}{M}\right\rfloor
 $$
 
-所以结果 \(r\) 近似对应：
+所以结果 $r$ 近似对应：
 
 $$
 \left[
@@ -87,7 +87,7 @@ $$
 I(r)=[L_r,R_r)
 $$
 
-结果区间 \([r_0,r_1]\) 对应：
+结果区间 $[r_0,r_1]$ 对应：
 
 $$
 I([r_0,r_1])=[L_{r_0},R_{r_1})
@@ -95,8 +95,8 @@ $$
 
 ## Branch State
 
-选择一个 anchor stream \(A\)，它的 offset 是 \(o_A\)，raw sample 记为
-\(x\)。对另一个 stream \(T\)，定义：
+选择一个 anchor stream $A$，它的 offset 是 $o_A$，raw sample 记为
+$x$。对另一个 stream $T$，定义：
 
 $$
 \Delta_Q=o_T-o_A \pmod Q,\qquad \Delta_M=\Delta_Q \pmod M
@@ -136,7 +136,7 @@ $$
 H_+=[0,M),\qquad H_-=[M+3,Q)
 $$
 
-这两个条件都是 \(z_A\) 上的普通区间。再按 anchor 分支转回 \(S_A\)：
+这两个条件都是 $z_A$ 上的普通区间。再按 anchor 分支转回 $S_A$：
 
 $$
 z_A=
@@ -146,12 +146,12 @@ Q-S_A, & A-
 \end{cases}
 $$
 
-因此每个 branch guard 都能化简成 \(S_A\) 空间中的普通 half-open 区间。
+因此每个 branch guard 都能化简成 $S_A$ 空间中的普通 half-open 区间。
 多个 stream guard 直接求交即可。
 
 ## Same-Counter Line
 
-把 anchor 的 unsigned seed 在模 \(M\) 下写成：
+把 anchor 的 unsigned seed 在模 $M$ 下写成：
 
 $$
 z_A\equiv r_A S_A+t_A \pmod M
@@ -179,13 +179,13 @@ $$
 z_T\equiv r_AS_A+t_A+\Delta_M-2w_T \pmod M
 $$
 
-如果 \(T\) 在正分支：
+如果 $T$ 在正分支：
 
 $$
 S_T\equiv r_AS_A+t_A+\Delta_M-2w_T \pmod M
 $$
 
-如果 \(T\) 在负分支：
+如果 $T$ 在负分支：
 
 $$
 S_T\equiv -r_AS_A+2-t_A-\Delta_M+2w_T \pmod M
@@ -203,25 +203,25 @@ $$
 y=\sigma x+b\pmod M,\qquad \sigma\in\{+1,-1\}
 $$
 
-当 \(S_T=S_A+C\) 时：
+当 $S_T=S_A+C$ 时：
 
 $$
 y=x+\alpha C\pmod M
 $$
 
-当 \(S_T=-S_A+C\) 时：
+当 $S_T=-S_A+C$ 时：
 
 $$
 y=-x+\alpha C+2\beta\pmod M
 $$
 
-这里的 \(C\) 已经包含 \(\Delta_M\)、anchor sign 常数 \(t_A\)，以及
-wrap 修正 \(-2w_T\) 或 \(+2w_T\)。这就是之前讨论的
-`y = a*x + b (mod M)`，但 same-counter 下 \(a\) 只可能是 \(+1\) 或 \(-1\)。
+这里的 $C$ 已经包含 $\Delta_M$、anchor sign 常数 $t_A$，以及
+wrap 修正 $-2w_T$ 或 $+2w_T$。这就是之前讨论的
+`y = a*x + b (mod M)`，但 same-counter 下 $a$ 只可能是 $+1$ 或 $-1$。
 
 ## Pulling Observations Back
 
-一个非 anchor 观测给出 target sample 区间 \(I_T\)。在 branch line 下：
+一个非 anchor 观测给出 target sample 区间 $I_T$。在 branch line 下：
 
 如果：
 
@@ -254,11 +254,11 @@ $$
 U=I_A\cap I_1'\cap I_2'\cap\cdots
 $$
 
-目标每个 bucket 也用同样方式拉回，得到 \(U_r\)。
+目标每个 bucket 也用同样方式拉回，得到 $U_r$。
 
 ## Guard Counting
 
-branch guard 已经合并成 \(S_A\) 空间里的区间集合 \(J\)。而：
+branch guard 已经合并成 $S_A$ 空间里的区间集合 $J$。而：
 
 $$
 S_A=\alpha^{-1}(x-\beta)\pmod M
@@ -276,8 +276,8 @@ $$
 \#\{x\in U_r:\;px+q\pmod M\in J\}
 $$
 
-这一步不枚举 \(x\)。对一个 sample 区间 \([L,R)\) 和一个 guard 区间
-\([A,B)\)，使用前缀计数：
+这一步不枚举 $x$。对一个 sample 区间 $[L,R)$ 和一个 guard 区间
+$[A,B)$，使用前缀计数：
 
 $$
 F(N,T)=\#\{0\le x<N:\;px+q\pmod M<T\}
@@ -290,7 +290,7 @@ C([L,R),[A,B))=
 [F(R,B)-F(L,B)]-[F(R,A)-F(L,A)]
 $$
 
-\(F\) 用标准 Euclidean `floor_sum(n,m,a,b)` 在 \(O(\log M)\) 内计算。使用
+$F$ 用标准 Euclidean `floor_sum(n,m,a,b)` 在 $O(\log M)$ 内计算。使用
 恒等式：
 
 $$
@@ -320,10 +320,10 @@ $$
 2. 把每条 `NextInt` observation 转成精确 raw sample 区间。
 3. 选择 sample 区间最窄的 observation 作为 anchor。
 4. 枚举每个 offset 的 branch state：正负号和 wrap bit。
-5. 把 branch guard 化简到 \(S_A\) 区间并求交。
+5. 把 branch guard 化简到 $S_A$ 区间并求交。
 6. 把所有 observation bucket 拉回 anchor sample 空间并求交。
 7. 对 target 的每个 `NextInt` bucket，拉回 anchor sample 空间。
-8. 用 floor-sum 计数满足 \(x\) 区间和 \(S_A\) guard 的整数点。
+8. 用 floor-sum 计数满足 $x$ 区间和 $S_A$ guard 的整数点。
 9. 枚举所有涉及 offset 的边界 seed 点：
 
    $$
@@ -336,10 +336,11 @@ $$
 复杂度主要是：
 
 $$
-O(4^k \cdot R \cdot \log M)
+O(2\cdot4^k \cdot R \cdot \log M)
 $$
 
-其中 \(k\) 是非 anchor 的不同 offset 数，\(R\) 是 target `NextInt` 输出桶数。
+其中 $k$ 是非 anchor 的不同 offset 数，前面的 2 是 anchor 自身正/负分支，
+$R$ 是 target `NextInt` 输出桶数。
 它不依赖观测桶宽度，因此可以处理旧枚举器会拒绝的宽 observation。
 
 ## Limitations

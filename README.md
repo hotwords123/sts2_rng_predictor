@@ -17,8 +17,8 @@ uv run python scripts/reproduce_trash_heap.py --sample-check 1000000
 The source-inspection scripts read local paths from `.env`:
 
 ```dotenv
-STS2_CODE_ROOT=../sts2
-STS2_LOCALIZATION_ROOT=../localization
+STS2_CODE_ROOT=/path/to/sts2/code
+STS2_LOCALIZATION_ROOT=/path/to/sts2/localization
 ```
 
 As a library:
@@ -40,3 +40,8 @@ from sts2_rng_predictor import (
 See [docs/rng-correlation-calculator.md](docs/rng-correlation-calculator.md) for usage examples and limitations.
 See [docs/rng-math-model.md](docs/rng-math-model.md) for the mathematical model behind the predictor.
 See [docs/same-counter-fast-model.md](docs/same-counter-fast-model.md) for the non-enumerating same-counter model.
+
+## Credits
+
+This project was inspired by the analysis in [Correlated Randomness in Slay the Spire 2](https://tck.mn/blog/correlated-randomness-sts2/).
+The analysis and implementation were completed in collaboration with Codex.

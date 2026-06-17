@@ -25,10 +25,25 @@ new Rng(baseSeed + (uint)GetDeterministicHashCode(name))
 ## 基本用法
 
 ```bash
-uv run python -m sts2_rng_predictor --self-test
-uv run python -m sts2_rng_predictor --example
-uv run python -m sts2_rng_predictor --same-counter-example
+uv run sts2-rng-predictor --self-test
+uv run sts2-rng-predictor --example
+uv run sts2-rng-predictor --same-counter-example
+uv run python scripts/reproduce_leafy_hefty.py
+uv run python scripts/reproduce_trash_heap.py --sample-check 1000000
 ```
+
+项目现在按 Python package 组织，`pyproject.toml` 使用 `setuptools.build_meta`，
+`[tool.uv] package = true`。`scripts/` 下的复现脚本仍保留在包外，但通过已安装
+package 导入 `sts2_rng_predictor`，不需要手动改 `PYTHONPATH`。
+
+源代码/本地化路径由项目根目录 `.env` 提供：
+
+```dotenv
+STS2_CODE_ROOT=/path/to/sts2/code
+STS2_LOCALIZATION_ROOT=/path/to/sts2/localization
+```
+
+也可以调用 `load_local_source_config(path_to_env)` 显式读取其它 `.env` 文件。
 
 作为库导入：
 
@@ -112,6 +127,15 @@ Observation(offset="monster_ai", counter=0, call=full_int, observed_min=10, obse
 ```
 
 这两种写法都会使用 `GetDeterministicHashCode("monster_ai")` 得到同一个 32 位偏移。
+
+事件 RNG 不是 snake-case 命名 RNG。`EventModel.BeginEvent` 使用：
+
+```csharp
+runSeed + (IsShared ? 0 : Owner.NetId) + GetDeterministicHashCode(event.Id.Entry)
+```
+
+单人常见 `Owner.NetId == 1`，可用 `event_offset_for_id("NEOW")`、
+`event_offset_for_id("TRASH_HEAP")` 得到 `1 + hash(event id)` 的 32 位 offset。
 
 ## 计数器
 

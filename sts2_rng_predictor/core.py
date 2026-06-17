@@ -24,7 +24,7 @@ from __future__ import annotations
 import math
 from collections import Counter
 from dataclasses import dataclass
-from typing import Iterable, Literal
+from typing import Any, Iterable, Literal
 
 from .rng_compat import (
     INT_MAX,
@@ -422,7 +422,7 @@ def predict_same_counter_distribution(
     )
 
 
-def _format_distribution(distribution: dict[int | str, float]) -> str:
+def _format_distribution(distribution: dict[Any, float]) -> str:
     lines = []
     for result, probability in distribution.items():
         lines.append(f"  {result}: {probability:.6%}")

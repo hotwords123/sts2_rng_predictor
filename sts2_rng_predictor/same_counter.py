@@ -360,9 +360,10 @@ def predict_same_counter_fast(
     other_offsets = [offset for offset in offsets if offset != anchor_offset]
     counts: dict[int, int] = {}
     branch_count = 0
+    branch_states: tuple[BranchState, ...] = ((1, 0), (1, 1), (-1, 0), (-1, 1))
 
     for anchor_sign in (1, -1):
-        for states in product(((1, 0), (1, 1), (-1, 0), (-1, 1)), repeat=len(other_offsets)):
+        for states in product(branch_states, repeat=len(other_offsets)):
             branch_count += 1
             state_by_offset: dict[int, BranchState] = {
                 anchor_offset: (anchor_sign, 0),
