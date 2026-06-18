@@ -4,9 +4,7 @@
 from __future__ import annotations
 
 import argparse
-import json
 import random
-import re
 from collections import Counter
 from pathlib import Path
 
@@ -19,12 +17,19 @@ from sts2_rng_predictor import (
 )
 from sts2_rng_predictor.config import load_local_source_config
 from sts2_rng_predictor.rng_compat import call_next_int, rng_offset_for_name
+from sts2_rng_predictor.source_inspection import (
+    can_be_generated_by_modifiers,
+    card_allowed_for_mode,
+    load_titles,
+    localized_title,
+    model_db_references,
+    pascal_to_id,
+)
 
 
 CONFIG = load_local_source_config(Path(__file__).resolve().parents[1] / ".env")
 CARD_DIR = CONFIG.code_root / "MegaCrit" / "sts2" / "Core" / "Models" / "Cards"
 POOL_FILE = CONFIG.code_root / "MegaCrit" / "sts2" / "Core" / "Models" / "CardPools" / "CurseCardPool.cs"
-LOC_FILE = CONFIG.localization_root / "eng" / "cards.json"
 
 ACTS = {"underdocks": 0, "overgrowth": 1}
 NEOW_CURSE_RELICS = [
@@ -39,36 +44,23 @@ NEOW_CURSE_RELICS = [
 ]
 
 
-def pascal_to_id(name: str) -> str:
-    return re.sub(r"(?<=[A-Za-z0-9])(?=[A-Z])", "_", name).upper()
-
-
-def load_titles() -> dict[str, str]:
-    raw = json.loads(LOC_FILE.read_text(encoding="utf-8"))
-    return {key.removesuffix(".title"): value for key, value in raw.items() if key.endswith(".title")}
-
-
 def curse_pool_order() -> list[str]:
     text = POOL_FILE.read_text(encoding="utf-8")
-    return re.findall(r"ModelDb\.Card<([A-Za-z0-9_]+)>\(\)", text)
+    return model_db_references(text, "Card")
 
 
-def can_be_generated_by_modifiers(card_class: str) -> bool:
-    text = (CARD_DIR / f"{card_class}.cs").read_text(encoding="utf-8")
-    return "CanBeGeneratedByModifiers => false" not in text
-
-
-def available_curses() -> list[str]:
+def available_curses(multiplayer: bool) -> list[str]:
     # Source: NeowsBones.AfterObtained filters CurseCardPool by
     # CanBeGeneratedByModifiers, then orders by card Id before NextItem.
     return sorted(
-        (card for card in curse_pool_order() if can_be_generated_by_modifiers(card)),
+        (
+            card
+            for card in curse_pool_order()
+            if can_be_generated_by_modifiers(CARD_DIR, card)
+            and card_allowed_for_mode(CARD_DIR, card, multiplayer)
+        ),
         key=pascal_to_id,
     )
-
-
-def card_title(card_class: str, titles: dict[str, str]) -> str:
-    return titles.get(pascal_to_id(card_class), card_class)
 
 
 def format_probability(probability: float) -> str:
@@ -85,12 +77,12 @@ def act_observation(act_name: str) -> IntObservation:
     return IntObservation(0, 0, IntCall(0, 2), ACTS[act_name], ACTS[act_name])
 
 
-def neows_bones_option_observation() -> IntObservation:
+def neows_bones_option_observation(net_id: int) -> IntObservation:
     # Neow.GenerateInitialOptions first rolls one curse-pool option. The
     # resulting option is appended as the third visible choice.
     relic_index = NEOW_CURSE_RELICS.index("NeowsBones")
     return IntObservation(
-        event_offset_for_id("NEOW"),
+        event_offset_for_id("NEOW", net_id),
         0,
         IntCall(0, len(NEOW_CURSE_RELICS)),
         relic_index,
@@ -104,9 +96,9 @@ def neows_bones_curse_target(curse_count: int) -> IntTarget:
     return IntTarget("niche", 0, IntCall(0, curse_count))
 
 
-def distribution_for(act_name: str, curse_count: int):
+def distribution_for(act_name: str, curse_count: int, net_id: int):
     return predict_same_counter_fast(
-        [act_observation(act_name), neows_bones_option_observation()],
+        [act_observation(act_name), neows_bones_option_observation(net_id)],
         neows_bones_curse_target(curse_count),
         max_target_buckets=curse_count,
     )
@@ -117,13 +109,13 @@ def print_distribution(title: str, result, curses: list[str], titles: dict[str, 
     print(f"  conditional seed count: {result.total_count:,}")
     for index, probability in sorted(result.distribution.items(), key=lambda item: item[1], reverse=True):
         curse = curses[index]
-        print(f"  {card_title(curse, titles):18s} {format_probability(probability)}  [{curse}]")
+        print(f"  {localized_title(curse, titles):18s} {format_probability(probability)}  [{curse}]")
     print()
 
 
-def _sample_distributions(sample_count: int, seed: int, curse_count: int) -> None:
+def _sample_distributions(sample_count: int, seed: int, curse_count: int, net_id: int) -> None:
     rng = random.Random(seed)
-    neow_offset = event_offset_for_id("NEOW")
+    neow_offset = event_offset_for_id("NEOW", net_id)
     niche_offset = rng_offset_for_name("niche")
     bones_index = NEOW_CURSE_RELICS.index("NeowsBones")
     counts = {act: Counter() for act in ACTS}
@@ -167,33 +159,49 @@ def main() -> None:
         default=1,
         help="PRNG seed for --sample-check",
     )
+    parser.add_argument(
+        "--net-id",
+        type=int,
+        default=1,
+        help="player NetId to model; single-player uses 1",
+    )
+    parser.add_argument(
+        "--multiplayer",
+        action="store_true",
+        help="use multiplayer card filtering; default is single-player filtering",
+    )
     args = parser.parse_args()
+    if args.net_id < 0:
+        raise ValueError("--net-id must be non-negative")
 
-    titles = load_titles()
-    curses = available_curses()
-    neow_offset = event_offset_for_id("NEOW")
+    titles = load_titles(CONFIG.localization_root)
+    curses = available_curses(args.multiplayer)
+    neow_offset = event_offset_for_id("NEOW", args.net_id)
     niche_offset = rng_offset_for_name("niche")
 
     print("Offsets")
+    print(f"  player NetId:    {args.net_id}")
     print("  act roll:        0 (new Rng(hash(seed)))")
-    print(f"  NEOW event:      {neow_offset} (1 + hash('NEOW'))")
+    print(f"  NEOW event:      {neow_offset} (NetId + hash('NEOW'))")
     print(f"  niche:           {niche_offset} (hash('niche'))")
     print()
     print(f"Neow curse option: NeowsBones index {NEOW_CURSE_RELICS.index('NeowsBones')} of {len(NEOW_CURSE_RELICS)}")
+    print(f"Mode:              {'multiplayer' if args.multiplayer else 'single-player'}")
     print(f"Available curses:  {len(curses)}")
     print("Weighting: exact over all 32-bit values after StringHelper.GetDeterministicHashCode(seed).")
+    print("Act observation assumes Underdocks is revealed and not single-player first-time forced.")
     print()
     print("Available curse order")
     for index, curse in enumerate(curses):
-        print(f"  {index}: {card_title(curse, titles)} [{curse}]")
+        print(f"  {index}: {localized_title(curse, titles)} [{curse}]")
     print()
 
     for act in ("underdocks", "overgrowth"):
-        result = distribution_for(act, len(curses))
+        result = distribution_for(act, len(curses), args.net_id)
         print_distribution(f"Neow's Bones curse, conditioned on {act} and Neow's Bones option", result, curses, titles)
 
     if args.sample_check:
-        _sample_distributions(args.sample_check, args.sample_seed, len(curses))
+        _sample_distributions(args.sample_check, args.sample_seed, len(curses), args.net_id)
 
 
 if __name__ == "__main__":

@@ -20,6 +20,7 @@ from .rng_compat import (
     deterministic_hash_code,
     event_offset_for_id,
     normalize_offset,
+    player_offset_for_name,
     rng_offset_for_name,
     snake_case,
 )
@@ -48,6 +49,7 @@ __all__ = [
     "deterministic_hash_code",
     "event_offset_for_id",
     "normalize_offset",
+    "player_offset_for_name",
     "predict_distribution",
     "predict_same_counter_fast",
     "predict_same_counter_distribution",

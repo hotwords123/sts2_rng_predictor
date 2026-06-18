@@ -70,6 +70,17 @@ def event_offset_for_id(event_id: str, net_id: int = 1) -> int:
     return uint32(net_id + deterministic_hash_code(event_id))
 
 
+def player_offset_for_name(name: str, net_id: int = 1) -> int:
+    """Return the 32-bit player RNG-name offset for a player's net id.
+
+    Player.InitializeSeed seeds PlayerRngSet with
+    `hash(runSeedString) + Owner.NetId`; PlayerRngSet then adds the
+    snake-case RNG type hash.
+    """
+
+    return uint32(net_id + rng_offset_for_name(name))
+
+
 def normalize_offset(offset: int | str) -> int:
     if isinstance(offset, str):
         return rng_offset_for_name(offset)

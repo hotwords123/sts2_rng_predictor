@@ -13,8 +13,13 @@ uv run -m sts2_rng_predictor --same-counter-example
 uv run scripts/reproduce_leafy_hefty.py
 uv run scripts/reproduce_neows_bones_curse.py
 uv run scripts/reproduce_trash_heap.py --sample-check 1000000
+uv run scripts/reproduce_trash_heap.py --multiplayer --net-id 76561198000000000
 uv run scripts/plot_raw_scatter.py 1+transformations 0 --counter 0 --samples 20000 --output results/transform-vs-act.png
 ```
+
+The reproduction scripts default to single-player `--net-id 1`. Use
+`--multiplayer` for multiplayer card-pool filtering, and pass a player's
+multiplayer NetId when modeling per-player event RNG or PlayerRng streams.
 
 `plot_raw_scatter.py` hashes non-numeric offset tokens exactly as written. Use
 ordinary snake_case for named RNGs such as `transformations` and

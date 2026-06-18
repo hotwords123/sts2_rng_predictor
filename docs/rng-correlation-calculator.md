@@ -30,6 +30,7 @@ uv run sts2-rng-predictor --example
 uv run sts2-rng-predictor --same-counter-example
 uv run python scripts/reproduce_leafy_hefty.py
 uv run python scripts/reproduce_trash_heap.py --sample-check 1000000
+uv run python scripts/reproduce_trash_heap.py --multiplayer --net-id 76561198000000000
 ```
 
 项目现在按 Python package 组织，`pyproject.toml` 使用 `setuptools.build_meta`，
@@ -136,6 +137,30 @@ runSeed + (IsShared ? 0 : Owner.NetId) + GetDeterministicHashCode(event.Id.Entry
 
 单人常见 `Owner.NetId == 1`，可用 `event_offset_for_id("NEOW")`、
 `event_offset_for_id("TRASH_HEAP")` 得到 `1 + hash(event id)` 的 32 位 offset。
+多人预测时传入目标玩家的 net id，例如 `event_offset_for_id("TRASH_HEAP", net_id)`。
+
+`PlayerRngSet` 也会按玩家分流。`Player.InitializeSeed` 先用：
+
+```csharp
+hash(runSeedString) + Owner.NetId
+```
+
+再由 `PlayerRngSet` 为 `Rewards`、`Transformations` 等 RNG 加上 snake-case
+名称 hash。工具里的 `player_offset_for_name("rewards", net_id)` 可得到对应偏移；
+单人默认同样是 `net_id=1`。
+
+多人还会影响卡池过滤。`IRunState.CardMultiplayerConstraint` 只有两种实际分支：
+单人运行过滤掉 `MultiplayerOnly` 卡，多人运行过滤掉 `SingleplayerOnly` 卡。
+复现脚本默认按单人过滤；传 `--multiplayer` 时按多人过滤。
+
+这些复现脚本里的 act 条件还假设 Underdocks epoch 已揭示，且不是单人首次发现
+Underdocks 的强制分支。源码中 `ActModel.GetRandomList()` 在普通情况下用一次
+`rng.NextBool()` 决定 Act 1 是 Underdocks 还是 Overgrowth；如果 Underdocks 未揭示，
+或单人首次发现 Underdocks 被强制触发，这个 act 观测不能按同一个 RNG call 建模。
+
+其它仍需按具体存档/运行状态确认的边界包括：unlock state、Neow/Ancient 是否被 hook
+禁止、modifier/relic hook 对 card reward pool 的修改，以及会在目标调用前消耗同一 RNG
+stream 的额外操作。
 
 ## 计数器
 
