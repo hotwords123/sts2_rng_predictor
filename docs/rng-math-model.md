@@ -496,8 +496,13 @@ $$
 z_i=z_A+\Delta_Q-wQ
 $$
 
-subtracted one copy of $Q$. This wrap bit matters because $Q\equiv2\pmod M$,
-so it changes the sample line's constant term by two units in folded-seed space.
+subtracted one copy of $Q$. The algorithm enumerates this wrap bit explicitly
+because it changes the sample line's constant term by two units in folded-seed
+space and contributes an additional guard. It is not an independent source of
+extra visible line families: for a fixed offset difference and sign pair, the
+guard normally fixes $w$ to one value or makes that sign/wrap state empty. A
+normal rectangular scatter plot may still show the remaining modular lines as
+boundary-split segments.
 
 For a fixed branch assignment:
 

@@ -118,6 +118,12 @@ $$
 z_T=z_A+\Delta_Q-w_TQ
 $$
 
+这里的 wrap bit 是算法显式枚举的 branch state：它说明从 anchor seed 平移到
+目标 seed 时是否跨过了 $Q$ 边界。它会改变这条 branch line 的截距和 guard。
+但它不是独立增加一组可见线的自由变量：对一个固定 offset 差和 sign pair，
+下面的 guard 通常会把 $w_T$ 限定为唯一值，或让这个 sign/wrap state 为空。
+普通散点图里看到的仍然是这些 guarded modular line 的片段。
+
 正负号和 wrap bit 的 guard 是：
 
 $$
@@ -138,6 +144,9 @@ $$
 $$
 H_+=[0,M),\qquad H_-=[M+3,Q)
 $$
+
+中间省略的 $M,M+1,M+2$ 是 `.NET Random(int)` 的 abs/`int.MinValue`
+边界特例；连续区间模型先排除它们，最后由实现单独补回边界点计数。
 
 这两个条件都是 $z_A$ 上的普通区间。再按 anchor 分支转回 $S_A$：
 
