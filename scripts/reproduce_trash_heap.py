@@ -18,23 +18,28 @@ from sts2_rng_predictor import (
 )
 from sts2_rng_predictor.config import load_local_source_config
 from sts2_rng_predictor.rng_compat import call_next_int
-from sts2_rng_predictor.source_inspection import model_db_references
+from sts2_rng_predictor.source_inspection import (
+    model_db_references,
+    relic_allowed_for_mode,
+    relic_option_references_in_property,
+)
 
 
 CONFIG = load_local_source_config(Path(__file__).resolve().parents[1] / ".env")
+RELIC_DIR = CONFIG.code_root / "MegaCrit" / "sts2" / "Core" / "Models" / "Relics"
+NEOW_FILE = CONFIG.code_root / "MegaCrit" / "sts2" / "Core" / "Models" / "Events" / "Neow.cs"
 TRASH_HEAP_FILE = CONFIG.code_root / "MegaCrit" / "sts2" / "Core" / "Models" / "Events" / "TrashHeap.cs"
 
 ACTS = {"underdocks": 0, "overgrowth": 1}
-NEOW_CURSE_RELICS = [
-    "CursedPearl",
-    "HeftyTablet",
-    "LargeCapsule",
-    "LeafyPoultice",
-    "NeowsBones",
-    "PrecariousShears",
-    "SilkenTress",
-    "SilverCrucible",
-]
+
+
+def neow_curse_relics(multiplayer: bool) -> list[str]:
+    text = NEOW_FILE.read_text(encoding="utf-8")
+    return [
+        relic
+        for relic in relic_option_references_in_property(text, "CurseOptions")
+        if relic_allowed_for_mode(RELIC_DIR, relic, multiplayer)
+    ]
 
 
 def _array_body(source: str, property_name: str) -> str:
@@ -66,13 +71,13 @@ def act_observation(act_name: str) -> IntObservation:
     return IntObservation(0, 0, IntCall(0, 2), ACTS[act_name], ACTS[act_name])
 
 
-def neow_curse_observation(relic_index: int, net_id: int) -> IntObservation:
+def neow_curse_observation(relic_index: int, neow_curse_relics: list[str], net_id: int) -> IntObservation:
     # Neow is an event RNG: runSeed + NetId + hash("NEOW"). The first call is
-    # NextItem(CurseOptions), whose source order is NEOW_CURSE_RELICS.
+    # NextItem(CurseOptions), after IsAllowedAtNeow filtering.
     return IntObservation(
         event_offset_for_id("NEOW", net_id),
         0,
-        IntCall(0, len(NEOW_CURSE_RELICS)),
+        IntCall(0, len(neow_curse_relics)),
         relic_index,
         relic_index,
     )
@@ -108,15 +113,22 @@ def print_relic_mapping(cards: list[str], relics: list[str]) -> None:
     print()
 
 
-def _sample_distributions(sample_count: int, act_name: str, card_count: int, seed: int, net_id: int) -> None:
+def _sample_distributions(
+    sample_count: int,
+    act_name: str,
+    card_count: int,
+    seed: int,
+    neow_curse_relics: list[str],
+    net_id: int,
+) -> None:
     rng = random.Random(seed)
     act_value = ACTS[act_name]
     neow_offset = event_offset_for_id("NEOW", net_id)
     trash_offset = event_offset_for_id("TRASH_HEAP", net_id)
     base_counts: Counter[int] = Counter()
     base_total = 0
-    relic_counts = [Counter() for _ in NEOW_CURSE_RELICS]
-    relic_totals = [0 for _ in NEOW_CURSE_RELICS]
+    relic_counts = [Counter() for _ in neow_curse_relics]
+    relic_totals = [0 for _ in neow_curse_relics]
 
     for _ in range(sample_count):
         base_seed = rng.randrange(2**32)
@@ -126,7 +138,7 @@ def _sample_distributions(sample_count: int, act_name: str, card_count: int, see
         base_counts[trash_card] += 1
         base_total += 1
 
-        neow_relic = call_next_int(base_seed, neow_offset, 0, len(NEOW_CURSE_RELICS))
+        neow_relic = call_next_int(base_seed, neow_offset, 0, len(neow_curse_relics))
         relic_counts[neow_relic][trash_card] += 1
         relic_totals[neow_relic] += 1
 
@@ -143,7 +155,7 @@ def _sample_distributions(sample_count: int, act_name: str, card_count: int, see
             f"{index}:{count / total:.2%}"
             for index, count in relic_counts[relic_index].most_common()
         )
-        print(f"    {NEOW_CURSE_RELICS[relic_index]:18s} {total:8,d}  {compact}")
+        print(f"    {neow_curse_relics[relic_index]:18s} {total:8,d}  {compact}")
     print()
 
 
@@ -190,6 +202,7 @@ def main() -> None:
 
     cards = trash_heap_cards()
     relics = trash_heap_relics()
+    curse_relics = neow_curse_relics(args.multiplayer)
     if len(cards) != 10 or len(relics) != 5:
         raise ValueError(f"Expected 10 cards and 5 relics, got {len(cards)} cards and {len(relics)} relics")
 
@@ -215,8 +228,12 @@ def main() -> None:
     print_card_distribution(f"Trash Heap random card, conditioned on {args.act}", base_result, cards, args.min_probability)
 
     print(f"Trash Heap random card, conditioned on {args.act} and Neow curse pool relic")
-    for relic_index, relic in enumerate(NEOW_CURSE_RELICS):
-        result = predict_trash_heap([act_obs, neow_curse_observation(relic_index, args.net_id)], len(cards), args.net_id)
+    for relic_index, relic in enumerate(curse_relics):
+        result = predict_trash_heap(
+            [act_obs, neow_curse_observation(relic_index, curse_relics, args.net_id)],
+            len(cards),
+            args.net_id,
+        )
         compact = ", ".join(
             f"{cards[index]} {probability:.2%}"
             for index, probability in sorted(result.distribution.items(), key=lambda item: item[1], reverse=True)
@@ -226,12 +243,12 @@ def main() -> None:
 
     print()
     print("Neow curse pool order")
-    for index, relic in enumerate(NEOW_CURSE_RELICS):
+    for index, relic in enumerate(curse_relics):
         print(f"  {index}: {relic}")
 
     if args.sample_check:
         print()
-        _sample_distributions(args.sample_check, args.act, len(cards), args.sample_seed, args.net_id)
+        _sample_distributions(args.sample_check, args.act, len(cards), args.sample_seed, curse_relics, args.net_id)
 
 
 if __name__ == "__main__":

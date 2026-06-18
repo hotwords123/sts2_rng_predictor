@@ -24,24 +24,27 @@ from sts2_rng_predictor.source_inspection import (
     localized_title,
     model_db_references,
     pascal_to_id,
+    relic_allowed_for_mode,
+    relic_option_references_in_property,
 )
 
 
 CONFIG = load_local_source_config(Path(__file__).resolve().parents[1] / ".env")
 CARD_DIR = CONFIG.code_root / "MegaCrit" / "sts2" / "Core" / "Models" / "Cards"
+RELIC_DIR = CONFIG.code_root / "MegaCrit" / "sts2" / "Core" / "Models" / "Relics"
+NEOW_FILE = CONFIG.code_root / "MegaCrit" / "sts2" / "Core" / "Models" / "Events" / "Neow.cs"
 POOL_FILE = CONFIG.code_root / "MegaCrit" / "sts2" / "Core" / "Models" / "CardPools" / "CurseCardPool.cs"
 
 ACTS = {"underdocks": 0, "overgrowth": 1}
-NEOW_CURSE_RELICS = [
-    "CursedPearl",
-    "HeftyTablet",
-    "LargeCapsule",
-    "LeafyPoultice",
-    "NeowsBones",
-    "PrecariousShears",
-    "SilkenTress",
-    "SilverCrucible",
-]
+
+
+def neow_curse_relics(multiplayer: bool) -> list[str]:
+    text = NEOW_FILE.read_text(encoding="utf-8")
+    return [
+        relic
+        for relic in relic_option_references_in_property(text, "CurseOptions")
+        if relic_allowed_for_mode(RELIC_DIR, relic, multiplayer)
+    ]
 
 
 def curse_pool_order() -> list[str]:
@@ -77,14 +80,15 @@ def act_observation(act_name: str) -> IntObservation:
     return IntObservation(0, 0, IntCall(0, 2), ACTS[act_name], ACTS[act_name])
 
 
-def neows_bones_option_observation(net_id: int) -> IntObservation:
+def neows_bones_option_observation(neow_curse_relics: list[str], net_id: int) -> IntObservation:
     # Neow.GenerateInitialOptions first rolls one curse-pool option. The
-    # resulting option is appended as the third visible choice.
-    relic_index = NEOW_CURSE_RELICS.index("NeowsBones")
+    # resulting option is appended as the third visible choice after
+    # IsAllowedAtNeow filtering.
+    relic_index = neow_curse_relics.index("NeowsBones")
     return IntObservation(
         event_offset_for_id("NEOW", net_id),
         0,
-        IntCall(0, len(NEOW_CURSE_RELICS)),
+        IntCall(0, len(neow_curse_relics)),
         relic_index,
         relic_index,
     )
@@ -96,9 +100,9 @@ def neows_bones_curse_target(curse_count: int) -> IntTarget:
     return IntTarget("niche", 0, IntCall(0, curse_count))
 
 
-def distribution_for(act_name: str, curse_count: int, net_id: int):
+def distribution_for(act_name: str, curse_count: int, neow_curse_relics: list[str], net_id: int):
     return predict_same_counter_fast(
-        [act_observation(act_name), neows_bones_option_observation(net_id)],
+        [act_observation(act_name), neows_bones_option_observation(neow_curse_relics, net_id)],
         neows_bones_curse_target(curse_count),
         max_target_buckets=curse_count,
     )
@@ -113,11 +117,17 @@ def print_distribution(title: str, result, curses: list[str], titles: dict[str, 
     print()
 
 
-def _sample_distributions(sample_count: int, seed: int, curse_count: int, net_id: int) -> None:
+def _sample_distributions(
+    sample_count: int,
+    seed: int,
+    curse_count: int,
+    neow_curse_relics: list[str],
+    net_id: int,
+) -> None:
     rng = random.Random(seed)
     neow_offset = event_offset_for_id("NEOW", net_id)
     niche_offset = rng_offset_for_name("niche")
-    bones_index = NEOW_CURSE_RELICS.index("NeowsBones")
+    bones_index = neow_curse_relics.index("NeowsBones")
     counts = {act: Counter() for act in ACTS}
     totals = {act: 0 for act in ACTS}
 
@@ -126,7 +136,7 @@ def _sample_distributions(sample_count: int, seed: int, curse_count: int, net_id
         for act_name, act_value in ACTS.items():
             if call_next_int(base_seed, 0, 0, 2) != act_value:
                 continue
-            if call_next_int(base_seed, neow_offset, 0, len(NEOW_CURSE_RELICS)) != bones_index:
+            if call_next_int(base_seed, neow_offset, 0, len(neow_curse_relics)) != bones_index:
                 continue
             curse = call_next_int(base_seed, niche_offset, 0, curse_count)
             counts[act_name][curse] += 1
@@ -176,6 +186,7 @@ def main() -> None:
 
     titles = load_titles(CONFIG.localization_root)
     curses = available_curses(args.multiplayer)
+    curse_relics = neow_curse_relics(args.multiplayer)
     neow_offset = event_offset_for_id("NEOW", args.net_id)
     niche_offset = rng_offset_for_name("niche")
 
@@ -185,23 +196,28 @@ def main() -> None:
     print(f"  NEOW event:      {neow_offset} (NetId + hash('NEOW'))")
     print(f"  niche:           {niche_offset} (hash('niche'))")
     print()
-    print(f"Neow curse option: NeowsBones index {NEOW_CURSE_RELICS.index('NeowsBones')} of {len(NEOW_CURSE_RELICS)}")
+    print(f"Neow curse option: NeowsBones index {curse_relics.index('NeowsBones')} of {len(curse_relics)}")
     print(f"Mode:              {'multiplayer' if args.multiplayer else 'single-player'}")
     print(f"Available curses:  {len(curses)}")
     print("Weighting: exact over all 32-bit values after StringHelper.GetDeterministicHashCode(seed).")
     print("Act observation assumes Underdocks is revealed and not single-player first-time forced.")
     print()
+    print("Neow curse relic order")
+    for index, relic in enumerate(curse_relics):
+        print(f"  {index}: {relic}")
+    print()
+
     print("Available curse order")
     for index, curse in enumerate(curses):
         print(f"  {index}: {localized_title(curse, titles)} [{curse}]")
     print()
 
     for act in ("underdocks", "overgrowth"):
-        result = distribution_for(act, len(curses), args.net_id)
+        result = distribution_for(act, len(curses), curse_relics, args.net_id)
         print_distribution(f"Neow's Bones curse, conditioned on {act} and Neow's Bones option", result, curses, titles)
 
     if args.sample_check:
-        _sample_distributions(args.sample_check, args.sample_seed, len(curses), args.net_id)
+        _sample_distributions(args.sample_check, args.sample_seed, len(curses), curse_relics, args.net_id)
 
 
 if __name__ == "__main__":
