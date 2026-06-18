@@ -13,7 +13,12 @@ uv run -m sts2_rng_predictor --same-counter-example
 uv run scripts/reproduce_leafy_hefty.py
 uv run scripts/reproduce_neows_bones_curse.py
 uv run scripts/reproduce_trash_heap.py --sample-check 1000000
+uv run scripts/plot_raw_scatter.py 1+transformations 0 --counter 0 --samples 20000 --output results/transform-vs-act.png
 ```
+
+`plot_raw_scatter.py` hashes non-numeric offset tokens exactly as written. Use
+ordinary snake_case for named RNGs such as `transformations` and
+SCREAMING_SNAKE_CASE for event ids such as `1+NEOW`.
 
 Saved outputs from the reproduction scripts are indexed in [results/README.md](results/README.md).
 
